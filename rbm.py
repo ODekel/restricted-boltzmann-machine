@@ -27,16 +27,22 @@ class RestrictedBoltzmannMachine:
         if inputs.size != inputs_mask.sum():
             raise ValueError("Input size does not match input mask size.")
 
+        # Negate input mask to get output mask.
         outputs_mask = ~inputs_mask
+        # Start with random neurons.
         visible, hidden = self._generate_neurons(inputs, inputs_mask)
+
         self._simulate_annealing(visible, hidden, outputs_mask, num_iterations=num_iterations)
         return visible, outputs_mask
 
     def train(self, sample: npt.NDArray[np.bool]):
+        # Start with random neurons and all visible neurons not tied.
         visible, hidden = self._generate_neurons(sample, np.ones_like(sample).ravel())
         hidden_energy_delta = (self._weights.T @ visible) + self._hidden_bias
         hidden_prob = _sigmoid(hidden_energy_delta)
-        self._simulate_annealing(visible, hidden, np.ones_like(visible), num_iterations=1)
+        # Just one iteration for training.
+        self._simulate_annealing(visible, hidden, np.ones_like(visible, dtype=np.bool), num_iterations=1)
+        # Update weights and biases.
         self._visible_bias = self._visible_bias + (self._learn_rate * (sample.astype(np.int8) - visible))
         self._hidden_bias = self._hidden_bias + (self._learn_rate * (hidden_prob - hidden))
         self._weights = self._weights + (self._learn_rate * ((sample @ hidden_prob.T) - (visible @ hidden.T)))
@@ -44,10 +50,9 @@ class RestrictedBoltzmannMachine:
     def _simulate_annealing(self, visible: npt.NDArray[np.bool], hidden: npt.NDArray[np.bool],
                             outputs_mask: npt.NDArray[np.bool], num_iterations: int):
         temp = self._start_temp
-        _ = self._single_pass(visible, hidden, outputs_mask, temp)
         for _ in range(num_iterations):
             _ = self._single_pass(visible, hidden, outputs_mask, temp)
-            temp -= max(self._temp_step, 0)
+            temp = max(temp - self._temp_step, 0)
 
     def _single_pass(self, visible: npt.NDArray[np.bool], hidden: npt.NDArray[np.bool],
                      outputs_mask: npt.NDArray[np.bool], temp: float) -> int:
